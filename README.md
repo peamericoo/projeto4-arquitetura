@@ -1,6 +1,6 @@
-# E-commerce com fila de e-mail (Projeto 4)
+# Projeto 4. E-commerce com fila de e-mail
 
-API de pedidos do Projeto 3. O `POST /orders` grava o pedido e coloca ele numa lista do Redis. Um worker, em outro container, lê a lista e envia o e-mail. Assim a resposta volta logo, sem esperar o envio.
+O ponto de partida é o e-commerce do Projeto 3. O que mudou é o envio do e-mail. O `POST /orders` grava o pedido, publica ele numa lista do Redis e responde. O e-mail fica por conta de um worker, que roda em outro container e lê essa lista.
 
 ## Como rodar
 
@@ -9,7 +9,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-A API sobe em `http://localhost:3000`. O Redis fica só na rede do Compose, sem porta no host.
+A API fica em `http://localhost:3000`. Um pedido de teste pode ser este.
 
 ```bash
 curl -X POST http://localhost:3000/orders \
@@ -21,17 +21,17 @@ curl -X POST http://localhost:3000/orders \
 }'
 ```
 
-A resposta traz `orderId` e `total`. O link do e-mail de teste sai no log do worker.
+A resposta traz `orderId` e `total`. O link do e-mail de teste aparece no log do worker, não no JSON.
 
 ```bash
 docker compose logs -f worker
 ```
 
-Para conferir o pedido gravado, use `curl http://localhost:3000/orders/1`.
+O produto `1` é o livro físico, R$ 100 e mais R$ 10 de frete. O `2` é o e-book, R$ 50, sem frete. Os pagamentos do projeto são `pix`, `credit_card` e `debit_card`.
 
-O produto `1` é o livro físico, R$ 100 mais R$ 10 de frete. O produto `2` é o e-book, R$ 50, sem frete. Os pagamentos simulados são `pix`, `credit_card` e `debit_card`.
+O pedido gravado também pode ser consultado com `curl http://localhost:3000/orders/1`.
 
-Com o worker parado, o pedido fica na lista. Quando o worker volta, o e-mail sai.
+Com o worker parado, o pedido espera na fila. Quando o worker volta, o e-mail é enviado.
 
 ```bash
 docker compose stop worker
@@ -46,29 +46,10 @@ docker compose start worker
 docker compose logs worker
 ```
 
-Para rodar dois workers, use:
+Se quiser dois workers, este comando sobe os dois. Cada pedido é lido por um só, então o e-mail não sai duplicado.
 
 ```bash
 docker compose up -d --scale worker=2
 ```
 
-Os dois workers dividem a mesma lista, então cada pedido gera um e-mail só.
-
-## Decisões
-
-O `OrderService` depende da interface `IOrderQueue` e não conhece o Redis. A `RedisOrderQueue` grava o pedido com `LPUSH` na lista `orders:email`. O `src/worker.ts` pega o `NotificationService` do container e consome a lista com `BRPOP`.
-
-Usei lista e não publish/subscribe. Com pub/sub, a mensagem se perde se o worker estiver parado, e dois workers mandariam o mesmo e-mail duas vezes. O motivo está registrado em `docs/adr-001-fila-de-email.md`.
-
-O cliente Redis fica só na `RedisOrderQueue`.
-
-## Estrutura
-
-```
-src/
-├── queues/        # IOrderQueue e RedisOrderQueue
-├── worker.ts      # BRPOP e envio do e-mail
-├── services/      # OrderService publica na fila
-├── container/     # registra RedisOrderQueue
-└── ...            # domínio, pagamentos, repositórios e HTTP do Projeto 3
-```
+A decisão de usar uma lista do Redis, e não o pub/sub da aula 08, está em `docs/adr-001-fila-de-email.md`.
